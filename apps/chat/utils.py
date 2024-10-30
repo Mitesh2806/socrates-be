@@ -51,47 +51,66 @@ async def process_chat(chat_request: ChatRequest, request: Request):
     question = problem['description']
     testcases = problem['testCases']
     
-    # Check for failed test cases
-    failedIndexes = chat_request.testResults.get('failedIndexes') if chat_request.testResults else None
+    # Check for failed test cases if testResults is provided
+    if chat_request.testResults:
+        failedIndexes = chat_request.testResults.get('failedIndexes')
+        if failedIndexes:
+            failed_testcases = [testcases[i] for i in failedIndexes]
+            
+            socratic_prompt = f"""
+            You are an AI teaching assistant designed to help a student understand the intricacies of Data Structures 
+            and Algorithms. Your goal is to guide the student using the 
+            Socratic method, where you ask thought-provoking questions rather than providing direct answers.
 
-    if failedIndexes:
-        failed_testcases = [testcases[i] for i in failedIndexes]
-        
-        socratic_prompt = f"""
-        You are an AI teaching assistant designed to help a student understand the intricacies of Data Structures 
-        and Algorithms. Your goal is to guide the student using the 
-        Socratic method, where you ask thought-provoking questions rather than providing direct answers.
+            The student has asked: "{prompt}" on the coding question: "{question}" where testcases are {testcases}  and the following code is written by the user: 
+            
+            {code}
+            
+            The following test cases have failed: {failed_testcases}
 
-        The student has asked: "{prompt}" on the coding question: "{question}", testcases are {testcases} and the following code is written by the user: 
-        
-        {code}
-        
-        The following test cases have failed: {failed_testcases}
+            Provide feedback on the code, including suggestions and possible issues that are in his code. Additionally, if there is code involve then give in to pretty format,
+            if there are some mistake(s) in the code or spelling error than give them instructions to fix them.And limit your response in to 30 words,
+            also check if testcases are wrong or not.
+            format the output in to text. Respond in a way that makes the code readable and formatted properly.
+            """
+        else:
+            socratic_prompt = f"""
+            You are an AI teaching assistant designed to help a student understand the intricacies of Data Structures 
+            and Algorithms. Your goal is to guide the student using the 
+            Socratic method, where you ask thought-provoking questions rather than providing direct answers.
 
-        Provide feedback on the code, including suggestions and possible issues that are in his code. Additionally, if there is code involved then give it in a pretty format,
-        if there are some mistake(s) in the code or spelling error then give them instructions to fix them. Limit your response to 30 words,
-        also check if testcases are wrong or not.
-        Format the output in text. Respond in a way that makes the code readable and formatted properly.
-        """
+            The student has asked: "{prompt}" on the coding question: "{question}", testcases are {testcases}  and the following code is written by the user: 
+            
+            {code}
+
+            Provide feedback on the code, including suggestions and possible issues that are in his code. Additionally, if there is code involved, format it properly.
+            If there are some mistake(s) in the code or spelling errors, give instructions to fix them. Limit your response to 30 words.
+            Format the output in text. Respond in a way that makes the code readable and formatted properly.
+            """
     else:
         socratic_prompt = f"""
         You are an AI teaching assistant designed to help a student understand the intricacies of Data Structures 
         and Algorithms. Your goal is to guide the student using the 
         Socratic method, where you ask thought-provoking questions rather than providing direct answers.
 
-        The student has asked: "{prompt}" on the coding question: "{question}", testcases are {testcases} and the following code is written by the user: 
+        The student has asked: "{prompt}" on the coding question: "{question}", testcases are {testcases}  and the following code is written by the user: 
         
         {code}
-        
-        Provide a comprehensive overview of the code, test cases, and any issues that may exist. Include suggestions and possible issues in the code or testcases. Additionally, if there is code involved, format it properly.
-        If there are some mistake(s) in the code or spelling errors, give instructions to fix them. Also, check if the test cases are wrong or not. Limit your response to 30 words.
+
+        Provide feedback on the code, including suggestions and possible issues that are in his code. Additionally, if there is code involved, format it properly.
+        If there are some mistake(s) in the code or spelling errors, give instructions to fix them. Limit your response to 30 words.
         Format the output in text. Respond in a way that makes the code readable and formatted properly.
         """
 
     try:
-        
+        # Save static context to memory if not already saved
+        if not memory.load_memory_variables({}).get("static_context_saved"):
+            static_context = f"Question: {question}\nTest Cases: {testcases}"
+            memory.save_context({"input": static_context}, {"output": ""})
+            memory.save_context({"input": "static_context_saved"}, {"output": "true"})
+
         # Save user input to memory
-        memory.save_context({"input": f"Question: {question}\nCode: {code}\nPrompt: {prompt}"}, {"output": ""})
+        memory.save_context({"input": f"Code: {code}\nPrompt: {prompt}"}, {"output": ""})
 
         # Load memory (previous conversation context)
         context = memory.load_memory_variables({})
@@ -106,6 +125,7 @@ async def process_chat(chat_request: ChatRequest, request: Request):
         {socratic_prompt}
         """
         
+
         # Generate a response using the model
         response = model.generate_content(chat_prompt)
 
@@ -116,7 +136,7 @@ async def process_chat(chat_request: ChatRequest, request: Request):
             assistant_output = "No response generated."
 
         # Save the assistant's response to memory
-        memory.save_context({"input": f"Question: {question}\nCode: {code}\nPrompt: {prompt}"}, {"output": assistant_output})
+        memory.save_context({"input": f"Code: {code}\nPrompt: {prompt}"}, {"output": assistant_output})
 
         # Return the generated response text with markdown-style formatting for code
         return assistant_output
